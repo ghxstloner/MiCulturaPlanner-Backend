@@ -1,0 +1,42 @@
+# ==================================
+# FRAMEWORK Y SERVIDOR
+# ==================================
+fastapi
+uvicorn[standard]
+
+# ==================================
+# LIBRERÍA PRINCIPAL DE IA
+# ==================================
+deepface
+
+# ==================================
+# DEPENDENCIAS CRÍTICAS DE TENSORFLOW
+# ==================================
+# Usamos una versión moderna de TensorFlow y añadimos tf-keras para
+# mantener la compatibilidad con librerías como deepface.
+tensorflow
+tf-keras
+
+# ==================================
+# BASE DE DATOS Y UTILIDADES
+# ==================================
+pymysql
+DBUtils
+
+# ==================================
+# CONFIGURACIÓN Y UTILIDADES DE FASTAPI
+# ==================================
+pydantic-settings
+python-dotenv
+python-multipart
+
+# ==================================
+# AUTENTICACIÓN Y SEGURIDAD
+# ==================================
+python-jose[cryptography]
+passlib[bcrypt]
+
+# ==================================
+# MANEJO DE FECHAS
+# ==================================
+python-dateutil
