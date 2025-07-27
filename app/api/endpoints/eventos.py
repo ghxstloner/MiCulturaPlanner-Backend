@@ -9,9 +9,29 @@ from app.models.evento import Evento
 from app.utils.auth import get_current_active_user
 from app.models.user import User
 from app.db.database import get_eventos_activos, get_planificacion_evento
+from datetime import timedelta
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+def format_time_field(time_field):
+    """Convierte timedelta o time a string HH:MM:SS"""
+    if time_field is None:
+        return None
+    
+    if isinstance(time_field, timedelta):
+        # Convertir timedelta a segundos totales
+        total_seconds = int(time_field.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    else:
+        # Asumir que es un objeto time o string
+        try:
+            return time_field.strftime('%H:%M:%S')
+        except AttributeError:
+            return str(time_field)
 
 @router.get("/", response_model=StandardResponse)
 async def get_eventos(
@@ -34,8 +54,8 @@ async def get_eventos(
             evento_data = {
                 'id_evento': evento['id_evento'],
                 'fecha_evento': evento['fecha_evento'].isoformat() if evento['fecha_evento'] else None,
-                'hora_inicio': evento['hora_inicio'].strftime('%H:%M:%S') if evento['hora_inicio'] else None,
-                'hora_fin': evento['hora_fin'].strftime('%H:%M:%S') if evento['hora_fin'] else None,
+                'hora_inicio': format_time_field(evento['hora_inicio']),
+                'hora_fin': format_time_field(evento['hora_fin']),
                 'descripcion_evento': evento['descripcion_evento'],
                 'descripcion_lugar': evento['descripcion_lugar'],
                 'descripcion_departamento': evento['descripcion_departamento'],
@@ -77,8 +97,8 @@ async def get_evento_detail(
         evento_detail = {
             'id_evento': evento['id_evento'],
             'fecha_evento': evento['fecha_evento'].isoformat() if evento['fecha_evento'] else None,
-            'hora_inicio': evento['hora_inicio'].strftime('%H:%M:%S') if evento['hora_inicio'] else None,
-            'hora_fin': evento['hora_fin'].strftime('%H:%M:%S') if evento['hora_fin'] else None,
+            'hora_inicio': format_time_field(evento['hora_inicio']),
+            'hora_fin': format_time_field(evento['hora_fin']),
             'descripcion_evento': evento['descripcion_evento'],
             'descripcion_lugar': evento['descripcion_lugar'],
             'descripcion_departamento': evento['descripcion_departamento'],
@@ -130,8 +150,8 @@ async def get_evento_planificacion(
                 'nombre_completo': f"{plan['nombres']} {plan['apellidos']}",
                 'identidad': plan['identidad'],
                 'fecha_vuelo': plan['fecha_vuelo'].isoformat() if plan['fecha_vuelo'] else None,
-                'hora_entrada': plan['hora_entrada'].strftime('%H:%M:%S') if plan['hora_entrada'] else None,
-                'hora_salida': plan['hora_salida'].strftime('%H:%M:%S') if plan['hora_salida'] else None,
+                'hora_entrada': format_time_field(plan['hora_entrada']),
+                'hora_salida': format_time_field(plan['hora_salida']),
                 'estatus': plan['estatus'],
                 'descripcion_evento': plan['descripcion_evento'],
                 'descripcion_lugar': plan['descripcion_lugar']

@@ -4,7 +4,7 @@ Endpoints de reconocimiento facial
 import logging
 import asyncio
 import time
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
@@ -29,14 +29,58 @@ from app.core.config import settings
 router = APIRouter()
 logger = logging.getLogger(__name__)
 
+def format_time_field(time_field):
+    """Convierte timedelta o time a string HH:MM:S"""
+    if time_field is None:
+        return None
+    
+    if isinstance(time_field, timedelta):
+        total_seconds = int(time_field.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    else:
+        try:
+            return time_field.strftime('%H:%M:%S')
+        except AttributeError:
+            return str(time_field)
+
+def format_time_display(time_field):
+    """Convierte a formato 12 horas con AM/PM"""
+    if time_field is None:
+        return 'N/A'
+    
+    if isinstance(time_field, timedelta):
+        total_seconds = int(time_field.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        
+        if hours == 0:
+            hour_12 = 12
+            am_pm = 'AM'
+        elif hours < 12:
+            hour_12 = hours
+            am_pm = 'AM'
+        elif hours == 12:
+            hour_12 = 12
+            am_pm = 'PM'
+        else:
+            hour_12 = hours - 12
+            am_pm = 'PM'
+            
+        return f"{hour_12:02d}:{minutes:02d}:{seconds:02d} {am_pm}"
+    else:
+        try:
+            return time_field.strftime('%I:%M:%S %p')
+        except AttributeError:
+            return str(time_field)
+
 @router.post("/recognize", response_model=FacialRecognitionResponse)
 async def recognize_face_and_mark_attendance(
     photo: UploadFile = File(...),
     id_evento: int = Form(...),
-    latitud: Optional[float] = Form(0.0),
-    longitud: Optional[float] = Form(0.0),
-    usar_geolocalizacion: bool = Form(True),
-    tipo_geolocalizacion: str = Form("verificar"),
     current_user: User = Depends(get_current_active_user)
 ):
     """
@@ -138,11 +182,6 @@ async def recognize_face_and_mark_attendance(
         
         planificacion_actual = planificacion[0]
         
-        # TODO: Aquí se puede agregar validación de geolocalización si es necesario
-        # if usar_geolocalizacion:
-        #     # Implementar lógica de geolocalización
-        #     pass
-        
         # Determinar tipo de marcación (entrada o salida)
         fecha_actual = date.today()
         hora_actual = datetime.now().time()
@@ -187,19 +226,19 @@ async def recognize_face_and_mark_attendance(
             'nombres': tripulante['nombres'],
             'apellidos': tripulante['apellidos'],
             'nombre_completo': f"{tripulante['nombres']} {tripulante['apellidos']}",
-            'departamento': tripulante['descripcion_departamento'],
-            'cargo': tripulante['descripcion_cargo']
+            'departamento': tripulante.get('descripcion_departamento', 'N/A'),
+            'cargo': tripulante.get('descripcion_cargo', 'N/A')
         }
         
         marcacion_info = {
             'id_marcacion': marcacion_id,
             'tipo_marcacion': tipo_texto,
             'fecha': fecha_actual.isoformat(),
-            'hora': hora_actual.strftime('%H:%M:%S'),
+            'hora': format_time_field(datetime.combine(fecha_actual, hora_actual)),
             'evento': planificacion_actual.get('descripcion_evento', 'N/A')
         }
         
-        message = f"{tipo_texto} registrada para {tripulante['nombres']} {tripulante['apellidos']} a las {hora_actual.strftime('%I:%M:%S %p')}"
+        message = f"{tipo_texto} registrada para {tripulante['nombres']} {tripulante['apellidos']} a las {format_time_display(datetime.combine(fecha_actual, hora_actual))}"
         
         logger.info(f"Reconocimiento exitoso: {crew_id} - {message}")
         

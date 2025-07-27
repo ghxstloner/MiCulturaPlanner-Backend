@@ -30,10 +30,6 @@ class Settings(BaseSettings):
     TEMP_UPLOAD_PATH: str = "./temp_uploads"
     ALLOWED_IMAGE_EXTENSIONS: List[str] = ["jpg", "jpeg", "png"]
     
-    # Geolocation Settings
-    GEOLOCATION_ENABLED: bool = True
-    GEOLOCATION_MAX_DISTANCE_METERS: int = 100
-    
     # Logging Settings
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "./logs/app.log"

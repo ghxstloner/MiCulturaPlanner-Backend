@@ -185,8 +185,7 @@ async def api_info():
         "settings": {
             "debug": settings.DEBUG,
             "face_confidence_threshold": settings.FACE_CONFIDENCE_THRESHOLD,
-            "face_distance_threshold": settings.FACE_DISTANCE_THRESHOLD,
-            "geolocation_enabled": settings.GEOLOCATION_ENABLED
+            "face_distance_threshold": settings.FACE_DISTANCE_THRESHOLD
         }
     }
 

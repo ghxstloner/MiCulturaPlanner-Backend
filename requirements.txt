@@ -12,10 +12,15 @@ deepface
 # ==================================
 # DEPENDENCIAS CRÍTICAS DE TENSORFLOW
 # ==================================
-# Usamos una versión moderna de TensorFlow y añadimos tf-keras para
-# mantener la compatibilidad con librerías como deepface.
 tensorflow
 tf-keras
+
+# ==================================
+# PROCESAMIENTO CIENTÍFICO (CRÍTICO)
+# ==================================
+scipy
+numpy
+opencv-python
 
 # ==================================
 # BASE DE DATOS Y UTILIDADES

@@ -2,7 +2,7 @@
 Endpoints para gestión de marcaciones
 """
 import logging
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from typing import List, Optional
 from fastapi import APIRouter, HTTPException, status, Depends, Query
 from app.schemas.responses import StandardResponse
@@ -13,6 +13,57 @@ from app.db.database import get_marcaciones_recientes
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+def format_time_field(time_field):
+    """Convierte timedelta o time a string HH:MM:SS"""
+    if time_field is None:
+        return None
+    
+    if isinstance(time_field, timedelta):
+        # Convertir timedelta a segundos totales
+        total_seconds = int(time_field.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        return f"{hours:02d}:{minutes:02d}:{seconds:02d}"
+    else:
+        # Asumir que es un objeto time o string
+        try:
+            return time_field.strftime('%H:%M:%S')
+        except AttributeError:
+            return str(time_field)
+
+def format_time_display(time_field):
+    """Convierte a formato 12 horas con AM/PM"""
+    if time_field is None:
+        return 'N/A'
+    
+    if isinstance(time_field, timedelta):
+        total_seconds = int(time_field.total_seconds())
+        hours = total_seconds // 3600
+        minutes = (total_seconds % 3600) // 60
+        seconds = total_seconds % 60
+        
+        # Convertir a formato 12 horas
+        if hours == 0:
+            hour_12 = 12
+            am_pm = 'AM'
+        elif hours < 12:
+            hour_12 = hours
+            am_pm = 'AM'
+        elif hours == 12:
+            hour_12 = 12
+            am_pm = 'PM'
+        else:
+            hour_12 = hours - 12
+            am_pm = 'PM'
+            
+        return f"{hour_12:02d}:{minutes:02d}:{seconds:02d} {am_pm}"
+    else:
+        try:
+            return time_field.strftime('%I:%M:%S %p')
+        except AttributeError:
+            return str(time_field)
 
 @router.get("/recent", response_model=StandardResponse)
 async def get_recent_marcaciones(
@@ -29,10 +80,13 @@ async def get_recent_marcaciones(
         marcaciones_formateadas = []
         for marcacion in marcaciones:
             # Determinar tipo de marcación y hora a mostrar
-            if marcacion['hora_salida'] and marcacion['hora_salida'].strftime('%H:%M:%S') != '00:00:00':
+            hora_salida_formatted = format_time_field(marcacion['hora_salida'])
+            hora_entrada_formatted = format_time_field(marcacion['hora_entrada'])
+            
+            if (hora_salida_formatted and hora_salida_formatted != '00:00:00'):
                 tipo_marcacion = "Salida"
                 hora_marcacion = marcacion['hora_salida']
-            elif marcacion['hora_entrada'] and marcacion['hora_entrada'].strftime('%H:%M:%S') != '00:00:00':
+            elif (hora_entrada_formatted and hora_entrada_formatted != '00:00:00'):
                 tipo_marcacion = "Entrada"
                 hora_marcacion = marcacion['hora_entrada']
             else:
@@ -46,8 +100,8 @@ async def get_recent_marcaciones(
                 'apellidos': marcacion['apellidos'],
                 'nombre_completo': f"{marcacion['nombres']} {marcacion['apellidos']}",
                 'fecha_marcacion': marcacion['fecha_marcacion'].isoformat() if marcacion['fecha_marcacion'] else None,
-                'hora_marcacion': hora_marcacion.strftime('%H:%M:%S') if hora_marcacion else None,
-                'hora_display': hora_marcacion.strftime('%I:%M:%S %p') if hora_marcacion else 'N/A',
+                'hora_marcacion': format_time_field(hora_marcacion),
+                'hora_display': format_time_display(hora_marcacion),
                 'tipo_marcacion_texto': tipo_marcacion,
                 'tipo_marcacion': marcacion['tipo_marcacion'],
                 'descripcion_evento': marcacion['descripcion_evento'],
@@ -90,10 +144,13 @@ async def get_today_marcaciones(
         # Formatear marcaciones
         marcaciones_formateadas = []
         for marcacion in marcaciones_hoy:
-            if marcacion['hora_salida'] and marcacion['hora_salida'].strftime('%H:%M:%S') != '00:00:00':
+            hora_salida_formatted = format_time_field(marcacion['hora_salida'])
+            hora_entrada_formatted = format_time_field(marcacion['hora_entrada'])
+            
+            if (hora_salida_formatted and hora_salida_formatted != '00:00:00'):
                 tipo_marcacion = "Salida"
                 hora_marcacion = marcacion['hora_salida']
-            elif marcacion['hora_entrada'] and marcacion['hora_entrada'].strftime('%H:%M:%S') != '00:00:00':
+            elif (hora_entrada_formatted and hora_entrada_formatted != '00:00:00'):
                 tipo_marcacion = "Entrada"
                 hora_marcacion = marcacion['hora_entrada']
             else:
@@ -107,8 +164,8 @@ async def get_today_marcaciones(
                 'apellidos': marcacion['apellidos'],
                 'nombre_completo': f"{marcacion['nombres']} {marcacion['apellidos']}",
                 'fecha_marcacion': marcacion['fecha_marcacion'].isoformat(),
-                'hora_marcacion': hora_marcacion.strftime('%H:%M:%S') if hora_marcacion else None,
-                'hora_display': hora_marcacion.strftime('%I:%M:%S %p') if hora_marcacion else 'N/A',
+                'hora_marcacion': format_time_field(hora_marcacion),
+                'hora_display': format_time_display(hora_marcacion),
                 'tipo_marcacion_texto': tipo_marcacion,
                 'descripcion_evento': marcacion['descripcion_evento'],
                 'descripcion_lugar': marcacion['descripcion_lugar']

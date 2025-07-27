@@ -7,10 +7,6 @@ from datetime import datetime
 
 class FacialRecognitionRequest(BaseModel):
     id_evento: int
-    latitud: Optional[float] = 0.0
-    longitud: Optional[float] = 0.0
-    usar_geolocalizacion: bool = True
-    tipo_geolocalizacion: str = "verificar"  # "verificar" o "reasignar"
 
 class FacialMatch(BaseModel):
     crew_id: str
