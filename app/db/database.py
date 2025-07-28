@@ -518,3 +518,212 @@ def update_planificacion_estatus(id_planificacion: int, nuevo_estatus: str) -> b
         return False
     finally:
         close_connection(connection)
+
+def get_todos_tripulantes(offset: int = 0, limit: int = 50):
+    """Obtiene todos los tripulantes activos"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return []
+            
+        cursor = connection.cursor()
+        query = """
+        SELECT t.*, d.descripcion_departamento, c.descripcion_cargo
+        FROM tripulantes t
+        LEFT JOIN departamentos d ON t.id_departamento = d.id_departamento
+        LEFT JOIN cargos c ON t.id_cargo = c.id_cargo
+        WHERE t.estatus = 1
+        ORDER BY t.nombres, t.apellidos
+        LIMIT %s OFFSET %s
+        """
+        cursor.execute(query, (limit, offset))
+        tripulantes = cursor.fetchall()
+        cursor.close()
+        
+        logger.debug(f"Tripulantes encontrados: {len(tripulantes)}")
+        return tripulantes
+        
+    except Exception as e:
+        logger.error(f"Error al obtener tripulantes: {e}")
+        return []
+    finally:
+        close_connection(connection)
+
+def get_dashboard_stats():
+    """Obtiene estadísticas para el dashboard"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return {}
+            
+        cursor = connection.cursor()
+        query = """
+        SELECT 
+            (SELECT COUNT(*) FROM eventos WHERE estatus = 1) as totalEventos,
+            (SELECT COUNT(*) FROM eventos WHERE DATE(fecha_evento) = CURDATE() AND estatus = 1) as eventosHoy,
+            (SELECT COUNT(*) FROM eventos WHERE estatus = 1) as eventosActivos,
+            (SELECT COUNT(*) FROM marcacion WHERE DATE(fecha_marcacion) = CURDATE()) as totalAsistencias
+        """
+        cursor.execute(query)
+        result = cursor.fetchone()
+        cursor.close()
+        
+        return result if result else {}
+        
+    except Exception as e:
+        logger.error(f"Error al obtener estadísticas del dashboard: {e}")
+        return {}
+    finally:
+        close_connection(connection)
+
+def get_reportes_stats():
+    """Obtiene estadísticas para reportes"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return {}
+            
+        cursor = connection.cursor()
+        query = """
+        SELECT 
+            COUNT(*) as totalEventos,
+            SUM(CASE WHEN estatus = 1 THEN 1 ELSE 0 END) as eventosActivos,
+            SUM(CASE WHEN fecha_evento < CURDATE() THEN 1 ELSE 0 END) as eventosFinalizados,
+            85 as promedioAsistencia
+        FROM eventos
+        """
+        cursor.execute(query)
+        result = cursor.fetchone()
+        cursor.close()
+        
+        return result if result else {}
+        
+    except Exception as e:
+        logger.error(f"Error al obtener estadísticas de reportes: {e}")
+        return {}
+    finally:
+        close_connection(connection)
+
+def get_reportes_stats_completos():
+    """Obtiene estadísticas completas para reportes"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return {}
+            
+        cursor = connection.cursor()
+        
+        # Estadísticas básicas de eventos
+        cursor.execute("""
+        SELECT 
+            COUNT(*) as totalEventos,
+            SUM(CASE WHEN estatus = 1 THEN 1 ELSE 0 END) as eventosActivos,
+            SUM(CASE WHEN fecha_evento < CURDATE() AND estatus = 1 THEN 1 ELSE 0 END) as eventosFinalizados
+        FROM eventos
+        """)
+        eventos_stats = cursor.fetchone()
+        
+        # Estadísticas de asistencia
+        cursor.execute("""
+        SELECT 
+            COUNT(DISTINCT p.id) as totalPlanificaciones,
+            COUNT(DISTINCT CASE WHEN m.hora_entrada IS NOT NULL AND m.hora_salida IS NOT NULL THEN m.id_marcacion END) as asistenciaCompleta,
+            COUNT(DISTINCT CASE WHEN m.hora_entrada IS NOT NULL AND m.hora_salida IS NULL THEN m.id_marcacion END) as asistenciaParcial,
+            COUNT(DISTINCT CASE WHEN m.id_marcacion IS NULL THEN p.id END) as ausencias
+        FROM planificacion p
+        LEFT JOIN marcacion m ON p.id = m.id_planificacion
+        INNER JOIN eventos e ON p.id_evento = e.id_evento
+        WHERE e.fecha_evento <= CURDATE()
+        """)
+        asistencia_stats = cursor.fetchone()
+        
+        # Calcular porcentajes de asistencia
+        total_planificaciones = asistencia_stats.get('totalPlanificaciones', 0)
+        if total_planificaciones > 0:
+            asistencia_completa_pct = round((asistencia_stats.get('asistenciaCompleta', 0) / total_planificaciones) * 100, 1)
+            asistencia_parcial_pct = round((asistencia_stats.get('asistenciaParcial', 0) / total_planificaciones) * 100, 1)
+            ausencias_pct = round((asistencia_stats.get('ausencias', 0) / total_planificaciones) * 100, 1)
+            promedio_asistencia = round(((asistencia_stats.get('asistenciaCompleta', 0) + asistencia_stats.get('asistenciaParcial', 0)) / total_planificaciones) * 100, 1)
+        else:
+            asistencia_completa_pct = 0
+            asistencia_parcial_pct = 0
+            ausencias_pct = 0
+            promedio_asistencia = 0
+        
+        # Eventos por mes (últimos 6 meses)
+        cursor.execute("""
+        SELECT 
+            DATE_FORMAT(fecha_evento, '%Y-%m') as mes,
+            DATE_FORMAT(fecha_evento, '%M %Y') as mes_nombre,
+            COUNT(*) as total_eventos
+        FROM eventos 
+        WHERE fecha_evento >= DATE_SUB(CURDATE(), INTERVAL 6 MONTH)
+        GROUP BY DATE_FORMAT(fecha_evento, '%Y-%m'), DATE_FORMAT(fecha_evento, '%M %Y')
+        ORDER BY mes DESC
+        """)
+        eventos_por_mes = cursor.fetchall()
+        
+        # Tendencias (comparar mes actual vs anterior)
+        cursor.execute("""
+        SELECT 
+            SUM(CASE WHEN DATE_FORMAT(e.fecha_evento, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m') THEN 1 ELSE 0 END) as eventos_mes_actual,
+            SUM(CASE WHEN DATE_FORMAT(e.fecha_evento, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m') THEN 1 ELSE 0 END) as eventos_mes_anterior,
+            COUNT(DISTINCT CASE WHEN DATE_FORMAT(m.fecha_marcacion, '%Y-%m') = DATE_FORMAT(CURDATE(), '%Y-%m') AND m.hora_entrada IS NOT NULL THEN m.id_marcacion END) as marcaciones_mes_actual,
+            COUNT(DISTINCT CASE WHEN DATE_FORMAT(m.fecha_marcacion, '%Y-%m') = DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 1 MONTH), '%Y-%m') AND m.hora_entrada IS NOT NULL THEN m.id_marcacion END) as marcaciones_mes_anterior
+        FROM eventos e
+        LEFT JOIN marcacion m ON e.id_evento = m.id_evento
+        WHERE e.fecha_evento >= DATE_SUB(CURDATE(), INTERVAL 2 MONTH)
+        """)
+        tendencias = cursor.fetchone()
+        
+        # Calcular cambios porcentuales
+        eventos_cambio = 0
+        if tendencias.get('eventos_mes_anterior', 0) > 0:
+            eventos_cambio = round(((tendencias.get('eventos_mes_actual', 0) - tendencias.get('eventos_mes_anterior', 0)) / tendencias.get('eventos_mes_anterior', 0)) * 100, 1)
+        
+        marcaciones_cambio = 0
+        if tendencias.get('marcaciones_mes_anterior', 0) > 0:
+            marcaciones_cambio = round(((tendencias.get('marcaciones_mes_actual', 0) - tendencias.get('marcaciones_mes_anterior', 0)) / tendencias.get('marcaciones_mes_anterior', 0)) * 100, 1)
+        
+        cursor.close()
+        
+        # Convertir eventos por mes a diccionario
+        eventos_por_mes_dict = {}
+        for evento_mes in eventos_por_mes:
+            eventos_por_mes_dict[evento_mes['mes_nombre']] = evento_mes['total_eventos']
+        
+        result = {
+            'totalEventos': eventos_stats.get('totalEventos', 0),
+            'eventosActivos': eventos_stats.get('eventosActivos', 0),
+            'eventosFinalizados': eventos_stats.get('eventosFinalizados', 0),
+            'promedioAsistencia': promedio_asistencia,
+            'eventosPorMes': eventos_por_mes_dict,
+            'asistenciaCompleta': asistencia_completa_pct,
+            'asistenciaParcial': asistencia_parcial_pct,
+            'ausencias': ausencias_pct,
+            'tendenciaEventos': eventos_cambio,
+            'tendenciaMarcaciones': marcaciones_cambio
+        }
+        
+        logger.debug(f"Estadísticas completas de reportes obtenidas: {result}")
+        return result
+        
+    except Exception as e:
+        logger.error(f"Error al obtener estadísticas completas de reportes: {e}")
+        return {}
+    finally:
+        close_connection(connection)
+
+def get_reportes_stats():
+    """Obtiene estadísticas para reportes (mantiene compatibilidad)"""
+    stats = get_reportes_stats_completos()
+    return {
+        'totalEventos': stats.get('totalEventos', 0),
+        'eventosActivos': stats.get('eventosActivos', 0), 
+        'eventosFinalizados': stats.get('eventosFinalizados', 0),
+        'promedioAsistencia': stats.get('promedioAsistencia', 0)
+    }

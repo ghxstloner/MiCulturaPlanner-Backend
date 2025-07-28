@@ -7,10 +7,59 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query
 from app.schemas.responses import StandardResponse
 from app.utils.auth import get_current_active_user
 from app.models.user import User
-from app.db.database import get_tripulante_by_field
+from app.db.database import get_tripulante_by_field, get_todos_tripulantes
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
+
+@router.get("/", response_model=StandardResponse)
+async def get_all_tripulantes(
+    offset: int = Query(0, ge=0, description="Offset para paginación"),
+    limit: int = Query(50, ge=1, le=100, description="Límite de tripulantes por página"),
+    current_user: User = Depends(get_current_active_user)
+):
+    """
+    Obtiene todos los tripulantes activos
+    """
+    try:
+        tripulantes = get_todos_tripulantes(offset=offset, limit=limit)
+        
+        if not tripulantes:
+            return StandardResponse(
+                success=True,
+                message="No se encontraron tripulantes",
+                data=[]
+            )
+        
+        tripulantes_formateados = []
+        for tripulante in tripulantes:
+            tripulante_data = {
+                'id_tripulante': tripulante['id_tripulante'],
+                'crew_id': tripulante['crew_id'],
+                'nombres': tripulante['nombres'],
+                'apellidos': tripulante['apellidos'],
+                'identidad': tripulante['identidad'],
+                'email': tripulante['email'],
+                'celular': tripulante['celular'],
+                'imagen': tripulante['imagen'],
+                'departamento': tripulante.get('descripcion_departamento'),
+                'cargo': tripulante.get('descripcion_cargo'),
+                'estatus': tripulante['estatus']
+            }
+            tripulantes_formateados.append(tripulante_data)
+        
+        return StandardResponse(
+            success=True,
+            message=f"Se encontraron {len(tripulantes_formateados)} tripulantes",
+            data=tripulantes_formateados
+        )
+        
+    except Exception as e:
+        logger.error(f"Error al obtener tripulantes: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno del servidor al obtener tripulantes"
+        )
 
 @router.get("/search", response_model=StandardResponse)
 async def search_tripulantes(

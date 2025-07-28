@@ -2,7 +2,7 @@
 Router principal de la API
 """
 from fastapi import APIRouter
-from app.api.endpoints import auth, facial, eventos, marcaciones, tripulantes
+from app.api.endpoints import auth, facial, eventos, marcaciones, tripulantes, dashboard, reportes
 
 api_router = APIRouter()
 
@@ -35,6 +35,18 @@ api_router.include_router(
     tripulantes.router,
     prefix="/tripulantes",
     tags=["tripulantes"]
+)
+
+api_router.include_router(
+    dashboard.router,
+    prefix="/dashboard",
+    tags=["dashboard"]
+)
+
+api_router.include_router(
+    reportes.router,
+    prefix="/reportes",
+    tags=["reportes"]
 )
 
 # Endpoint de salud
