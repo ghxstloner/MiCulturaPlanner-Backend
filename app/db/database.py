@@ -9,6 +9,7 @@ from dbutils.pooled_db import PooledDB
 import threading
 from datetime import date
 from app.core.config import settings
+import base64
 
 logger = logging.getLogger(__name__)
 
@@ -106,13 +107,21 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
             
         cursor = connection.cursor()
         query = """
-        SELECT login, pswd, name, email, active, priv_admin, id_aerolinea
+        SELECT login, pswd, name, email, active, priv_admin, id_aerolinea, picture
         FROM sec_users 
         WHERE login = %s AND active = 'Y'
         """
         cursor.execute(query, (login,))
         user = cursor.fetchone()
         cursor.close()
+        
+        if user and user.get('picture'):
+            # Convertir bytes a base64 si es necesario
+            if isinstance(user['picture'], bytes):
+                user['picture'] = base64.b64encode(user['picture']).decode('utf-8')
+            # Si ya es string, dejarlo como está
+            elif not isinstance(user['picture'], str):
+                user['picture'] = None
         
         logger.debug(f"Usuario encontrado: {login if user else 'No encontrado'}")
         return user

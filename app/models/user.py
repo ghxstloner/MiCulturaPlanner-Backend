@@ -8,7 +8,8 @@ class User(BaseModel):
     active: str
     priv_admin: Optional[str] = None
     id_aerolinea: Optional[int] = None
-    
+    picture: Optional[str] = None
+
     class Config:
         from_attributes = True
 

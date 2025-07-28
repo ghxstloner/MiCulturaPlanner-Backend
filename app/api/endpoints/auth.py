@@ -42,7 +42,9 @@ async def login(login_data: LoginRequest):
             "name": user.name,
             "email": user.email,
             "is_admin": user.priv_admin == 'Y',
-            "id_aerolinea": user.id_aerolinea
+            "active": user.active,
+            "id_aerolinea": user.id_aerolinea,
+            "picture": user.picture
         }
         
         logger.info(f"Usuario autenticado exitosamente: {user.login}")
@@ -75,7 +77,8 @@ async def read_users_me(current_user: User = Depends(get_current_active_user)):
             "email": current_user.email,
             "is_admin": current_user.priv_admin == 'Y',
             "id_aerolinea": current_user.id_aerolinea,
-            "active": current_user.active
+            "active": current_user.active,
+            "picture": current_user.picture
         }
         
         return StandardResponse(
