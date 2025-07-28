@@ -9,14 +9,15 @@ from typing import Optional
 from fastapi import APIRouter, File, Form, UploadFile, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
 from app.schemas.facial import (
-    FacialRecognitionResponse, EmbeddingCreateRequest, EmbeddingCreateResponse
+    FacialRecognitionResponse, EmbeddingCreateRequest, EmbeddingCreateResponse,
+    EmbeddingCreateSimpleRequest
 )
 from app.schemas.responses import StandardResponse
 from app.utils.auth import get_current_active_user
 from app.models.user import User
 from app.utils.face_recognition import (
     extract_face_embedding, save_temp_image, cleanup_temp_file, 
-    validate_image_file, detect_faces_count
+    validate_image_file, detect_faces_count, download_image_from_url
 )
 from app.utils.face_embeddings import (
     save_face_embedding, find_best_face_matches, get_face_embedding_by_crew_id
@@ -415,6 +416,95 @@ async def create_face_embedding(
         raise
     except Exception as e:
         logger.error(f"Error al crear embedding: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Error interno al crear embedding."
+        )
+    finally:
+        if temp_file_path:
+            cleanup_temp_file(temp_file_path)
+
+@router.post("/create-embedding-simple", response_model=EmbeddingCreateResponse)
+async def create_face_embedding_simple(
+    request: EmbeddingCreateSimpleRequest
+):
+    """
+    Crea un embedding facial para un tripulante usando URL de imagen (sin autenticación)
+    """
+    temp_file_path = None
+    
+    try:
+        logger.info(f"Creando embedding simple para crew_id {request.crew_id}")
+        
+        # Verificar que el tripulante existe
+        tripulante = get_tripulante_by_field('crew_id', request.crew_id)
+        if not tripulante:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Tripulante con crew_id {request.crew_id} no encontrado."
+            )
+        
+        # Descargar imagen desde URL
+        temp_file_path = download_image_from_url(request.image_url, f"embedding_{request.crew_id}_")
+        
+        # Verificar un solo rostro
+        faces_count = detect_faces_count(temp_file_path)
+        if faces_count == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se detectó rostro en la imagen."
+            )
+        elif faces_count > 1:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Se detectaron múltiples rostros. Use una imagen con una sola persona."
+            )
+        
+        # Extraer embedding
+        embedding = await asyncio.to_thread(extract_face_embedding, temp_file_path, "Facenet512")
+        if embedding is None:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="No se pudo extraer el embedding facial."
+            )
+        
+        # Guardar en base de datos
+        embedding_id = save_face_embedding(
+            crew_id=request.crew_id,
+            embedding=embedding,
+            modelo="Facenet512",
+            confidence=1.0,
+            imagen_path=request.image_url
+        )
+        
+        if not embedding_id:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Error al guardar el embedding en la base de datos."
+            )
+        
+        tripulante_info = {
+            'crew_id': request.crew_id,
+            'nombres': tripulante['nombres'],
+            'apellidos': tripulante['apellidos'],
+            'nombre_completo': f"{tripulante['nombres']} {tripulante['apellidos']}"
+        }
+        
+        message = f"Embedding facial creado exitosamente para {tripulante['nombres']} {tripulante['apellidos']}"
+        
+        logger.info(f"Embedding simple creado: ID {embedding_id} para crew_id {request.crew_id}")
+        
+        return EmbeddingCreateResponse(
+            success=True,
+            message=message,
+            embedding_id=embedding_id,
+            tripulante_info=tripulante_info
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error al crear embedding simple: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno al crear embedding."

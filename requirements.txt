@@ -45,3 +45,8 @@ passlib[bcrypt]
 # MANEJO DE FECHAS
 # ==================================
 python-dateutil
+
+# ==================================
+# REQUESTS HTTP
+# ==================================
+requests

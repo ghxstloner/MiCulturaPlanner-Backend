@@ -29,6 +29,10 @@ class EmbeddingCreateRequest(BaseModel):
     crew_id: str
     modelo: str = "Facenet512"
 
+class EmbeddingCreateSimpleRequest(BaseModel):
+    image_url: str
+    crew_id: str
+
 class EmbeddingCreateResponse(BaseModel):
     success: bool
     message: str

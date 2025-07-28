@@ -6,6 +6,7 @@ import json
 import numpy as np
 import tempfile
 import logging
+import requests
 from typing import Optional, List, Dict, Any, Tuple
 from deepface import DeepFace
 from scipy.spatial.distance import cosine
@@ -17,6 +18,56 @@ logger = logging.getLogger(__name__)
 class FaceRecognitionError(Exception):
     """Excepción personalizada para errores de reconocimiento facial"""
     pass
+
+def download_image_from_url(image_url: str, prefix: str = "url_") -> str:
+    """
+    Descarga una imagen desde una URL y la guarda temporalmente.
+    
+    Args:
+        image_url: URL de la imagen a descargar
+        prefix: Prefijo para el nombre del archivo temporal
+    
+    Returns:
+        Ruta al archivo temporal descargado
+    
+    Raises:
+        FaceRecognitionError: Si no se puede descargar la imagen
+    """
+    try:
+        logger.debug(f"Descargando imagen desde: {image_url}")
+        
+        # Realizar request con timeout
+        response = requests.get(image_url, timeout=30, stream=True)
+        response.raise_for_status()
+        
+        # Verificar content-type
+        content_type = response.headers.get('content-type', '')
+        if not content_type.startswith('image/'):
+            raise FaceRecognitionError(f"URL no apunta a una imagen válida: {content_type}")
+        
+        # Crear directorio temporal si no existe
+        os.makedirs(settings.TEMP_UPLOAD_PATH, exist_ok=True)
+        
+        # Crear archivo temporal
+        with tempfile.NamedTemporaryFile(
+            delete=False,
+            suffix='.jpg',
+            prefix=prefix,
+            dir=settings.TEMP_UPLOAD_PATH
+        ) as tmp_file:
+            for chunk in response.iter_content(chunk_size=8192):
+                tmp_file.write(chunk)
+            temp_path = tmp_file.name
+        
+        logger.debug(f"Imagen descargada y guardada: {temp_path}")
+        return temp_path
+        
+    except requests.RequestException as e:
+        logger.error(f"Error al descargar imagen desde {image_url}: {str(e)}")
+        raise FaceRecognitionError(f"No se pudo descargar la imagen: {str(e)}")
+    except Exception as e:
+        logger.error(f"Error inesperado al descargar imagen: {str(e)}")
+        raise FaceRecognitionError(f"Error al procesar la imagen: {str(e)}")
 
 def extract_face_embedding(
     image_path: str, 
