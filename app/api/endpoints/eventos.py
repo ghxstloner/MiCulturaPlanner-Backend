@@ -8,7 +8,7 @@ from app.schemas.responses import StandardResponse, PaginatedResponse
 from app.models.evento import Evento
 from app.utils.auth import get_current_active_user
 from app.models.user import User
-from app.db.database import get_eventos_activos, get_planificacion_evento
+from app.db.database import get_eventos_activos, get_planificacion_evento, get_todos_eventos
 from datetime import timedelta
 
 router = APIRouter()
@@ -35,18 +35,20 @@ def format_time_field(time_field):
 
 @router.get("/", response_model=StandardResponse)
 async def get_eventos(
-    activos_solo: bool = Query(True, description="Solo eventos activos"),
+    activos_solo: bool = Query(False, description="Solo eventos activos"),
+    filtro_fecha: str = Query(None, description="Filtro por fecha: presente, futuro, pasado"),
+    offset: int = Query(0, description="Offset para paginación"),
+    limit: int = Query(20, description="Límite de eventos por página"),
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Obtiene la lista de eventos
+    Obtiene la lista de eventos con paginación y filtros
     """
     try:
         if activos_solo:
             eventos = get_eventos_activos()
         else:
-            # TODO: Implementar función para obtener todos los eventos
-            eventos = get_eventos_activos()
+            eventos = get_todos_eventos(offset=offset, limit=limit, filtro_fecha=filtro_fecha)
         
         # Formatear eventos para respuesta
         eventos_formateados = []
@@ -59,7 +61,8 @@ async def get_eventos(
                 'descripcion_evento': evento['descripcion_evento'],
                 'descripcion_lugar': evento['descripcion_lugar'],
                 'descripcion_departamento': evento['descripcion_departamento'],
-                'pais_nombre': evento['pais_nombre']
+                'pais_nombre': evento['pais_nombre'],
+                'estatus': evento.get('estatus', 0)  # Campo estatus corregido
             }
             eventos_formateados.append(evento_data)
         
@@ -103,7 +106,8 @@ async def get_evento_detail(
             'descripcion_lugar': evento['descripcion_lugar'],
             'descripcion_departamento': evento['descripcion_departamento'],
             'pais_nombre': evento['pais_nombre'],
-            'id_departamento': evento['id_departamento']
+            'id_departamento': evento['id_departamento'],
+            'estatus': evento.get('estatus', 0)  # Campo estatus corregido
         }
         
         return StandardResponse(

@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     TEMP_UPLOAD_PATH: str = "./temp_uploads"
     ALLOWED_IMAGE_EXTENSIONS: List[str] = ["jpg", "jpeg", "png"]
     
+    # Image URL Settings
+    IMAGE_BASE_URL: str = "https://echcarst.myscriptcase.com/scriptcase9/file/img/Cultura"
+    
     # Logging Settings
     LOG_LEVEL: str = "INFO"
     LOG_FILE: str = "./logs/app.log"

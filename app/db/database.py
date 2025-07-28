@@ -170,7 +170,7 @@ def get_eventos_activos() -> List[Dict[str, Any]]:
         query = """
         SELECT 
             e.id_evento, e.fecha_evento, e.hora_inicio, e.hora_fin,
-            e.descripcion_evento, e.id_departamento,
+            e.descripcion_evento, e.id_departamento, e.estatus,
             l.descripcion_lugar, d.descripcion_departamento,
             p.descripcion as pais_nombre
         FROM eventos e
@@ -193,6 +193,57 @@ def get_eventos_activos() -> List[Dict[str, Any]]:
     finally:
         close_connection(connection)
 
+def get_todos_eventos(offset: int = 0, limit: int = 20, filtro_fecha: str = None) -> List[Dict[str, Any]]:
+    """Obtiene todos los eventos con paginación y filtros opcionales"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return []
+            
+        cursor = connection.cursor()
+        
+        # Query base
+        query = """
+        SELECT 
+            e.id_evento, e.fecha_evento, e.hora_inicio, e.hora_fin,
+            e.descripcion_evento, e.id_departamento, e.estatus,
+            l.descripcion_lugar, d.descripcion_departamento,
+            p.descripcion as pais_nombre
+        FROM eventos e
+        LEFT JOIN lugar_evento l ON e.id_lugar = l.id_lugar_evento
+        LEFT JOIN departamentos d ON e.id_departamento = d.id_departamento
+        LEFT JOIN paises p ON e.id_pais = p.id_pais
+        WHERE 1=1
+        """
+        
+        params = []
+        
+        # Aplicar filtros de fecha
+        if filtro_fecha == 'presente':
+            query += " AND DATE(e.fecha_evento) = CURDATE()"
+        elif filtro_fecha == 'futuro':
+            query += " AND DATE(e.fecha_evento) > CURDATE()"
+        elif filtro_fecha == 'pasado':
+            query += " AND DATE(e.fecha_evento) < CURDATE()"
+        
+        query += " ORDER BY e.fecha_evento DESC, e.hora_inicio ASC"
+        query += " LIMIT %s OFFSET %s"
+        params.extend([limit, offset])
+        
+        cursor.execute(query, params)
+        eventos = cursor.fetchall()
+        cursor.close()
+        
+        logger.debug(f"Eventos encontrados: {len(eventos)} (offset: {offset}, limit: {limit})")
+        return eventos
+        
+    except Exception as e:
+        logger.error(f"Error al obtener eventos: {e}")
+        return []
+    finally:
+        close_connection(connection)
+
 def get_planificacion_evento(id_evento: int, id_tripulante: int = None) -> List[Dict[str, Any]]:
     """Obtiene la planificación de un evento"""
     connection = None
@@ -204,7 +255,7 @@ def get_planificacion_evento(id_evento: int, id_tripulante: int = None) -> List[
         cursor = connection.cursor()
         base_query = """
         SELECT 
-            p.id, p.id_evento, p.id_tripulante, p.crew_id,
+            p.id, p.id_evento, p.id_tripulante, t.crew_id,
             p.fecha_vuelo, p.hora_entrada, p.hora_salida, p.estatus,
             t.nombres, t.apellidos, t.identidad,
             e.descripcion_evento, e.fecha_evento,

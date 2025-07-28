@@ -15,7 +15,7 @@ class Evento(BaseModel):
     id_lugar: Optional[int] = None
     descripcion_evento: Optional[str] = None
     id_departamento: Optional[int] = None
-    estatus: int = 1
+    estatus: int = 1  # 1 = activo, 0 = inactivo
     descripcion_lugar: Optional[str] = None
     descripcion_departamento: Optional[str] = None
     pais_nombre: Optional[str] = None
