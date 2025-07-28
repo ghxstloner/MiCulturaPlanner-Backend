@@ -158,7 +158,13 @@ async def get_evento_planificacion(
                 'hora_salida': format_time_field(plan['hora_salida']),
                 'estatus': plan['estatus'],
                 'descripcion_evento': plan['descripcion_evento'],
-                'descripcion_lugar': plan['descripcion_lugar']
+                'descripcion_lugar': plan['descripcion_lugar'],
+                # ✅ AGREGAR CAMPO IMAGEN
+                'imagen': plan.get('imagen', None),  # Agregar imagen del tripulante
+                # ✅ MARCACIONES REALES - Campos de marcaciones reales
+                'marcacion_hora_entrada': format_time_field(plan.get('marcacion_hora_entrada')),
+                'marcacion_hora_salida': format_time_field(plan.get('marcacion_hora_salida')),
+                'procesado': plan.get('procesado_final', 0)  # Usar procesado_final que considera estatus de planificación
             }
             planificacion_formateada.append(plan_data)
         

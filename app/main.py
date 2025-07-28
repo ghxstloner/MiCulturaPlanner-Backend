@@ -46,12 +46,6 @@ async def lifespan(app: FastAPI):
     else:
         logger.info("✅ Conexión a base de datos verificada")
     
-    # Crear tabla de embeddings si no existe
-    if create_face_embeddings_table():
-        logger.info("✅ Tabla face_embeddings verificada/creada")
-    else:
-        logger.warning("⚠️ No se pudo crear/verificar tabla face_embeddings")
-    
     logger.info("🎉 Aplicación iniciada exitosamente")
     
     yield

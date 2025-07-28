@@ -7,6 +7,7 @@ import logging
 from typing import Optional, Dict, Any, List
 from dbutils.pooled_db import PooledDB
 import threading
+from datetime import date
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -257,13 +258,22 @@ def get_planificacion_evento(id_evento: int, id_tripulante: int = None) -> List[
         SELECT 
             p.id, p.id_evento, p.id_tripulante, t.crew_id,
             p.fecha_vuelo, p.hora_entrada, p.hora_salida, p.estatus,
-            t.nombres, t.apellidos, t.identidad,
+            t.nombres, t.apellidos, t.identidad, t.imagen,
             e.descripcion_evento, e.fecha_evento,
-            l.descripcion_lugar
+            l.descripcion_lugar,
+            m.hora_entrada as marcacion_hora_entrada,
+            m.hora_salida as marcacion_hora_salida,
+            m.procesado,
+            CASE 
+                WHEN p.estatus = 'R' THEN 1
+                WHEN m.procesado = 1 THEN 1
+                ELSE 0
+            END as procesado_final
         FROM planificacion p
         INNER JOIN tripulantes t ON p.id_tripulante = t.id_tripulante
         INNER JOIN eventos e ON p.id_evento = e.id_evento
         LEFT JOIN lugar_evento l ON p.id_lugar = l.id_lugar_evento
+        LEFT JOIN marcacion m ON p.id = m.id_planificacion
         WHERE p.id_evento = %s
         """
         
@@ -284,6 +294,33 @@ def get_planificacion_evento(id_evento: int, id_tripulante: int = None) -> List[
     except Exception as e:
         logger.error(f"Error al obtener planificación del evento {id_evento}: {e}")
         return []
+    finally:
+        close_connection(connection)
+
+def verificar_marcacion_existente(id_tripulante: int, id_evento: int, fecha: date) -> Optional[Dict[str, Any]]:
+    """Verifica si ya existe una marcación para el tripulante en el evento y fecha específicos"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return None
+            
+        cursor = connection.cursor()
+        query = """
+        SELECT id_marcacion, hora_entrada, hora_salida, tipo_marcacion
+        FROM marcacion 
+        WHERE id_tripulante = %s AND id_evento = %s AND fecha_marcacion = %s
+        LIMIT 1
+        """
+        cursor.execute(query, (id_tripulante, id_evento, fecha))
+        marcacion = cursor.fetchone()
+        cursor.close()
+        
+        return marcacion
+        
+    except Exception as e:
+        logger.error(f"Error al verificar marcación existente: {e}")
+        return None
     finally:
         close_connection(connection)
 
@@ -327,6 +364,78 @@ def create_marcacion(marcacion_data: Dict[str, Any]) -> Optional[int]:
     finally:
         close_connection(connection)
 
+def update_marcacion(marcacion_id: int, marcacion_data: Dict[str, Any]) -> Optional[int]:
+    """Actualiza una marcación existente"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return None
+            
+        cursor = connection.cursor()
+        
+        # Construir query de actualización dinámicamente
+        update_fields = []
+        params = []
+        
+        for field, value in marcacion_data.items():
+            if field not in ['id_marcacion'] and value is not None:
+                update_fields.append(f"{field} = %s")
+                params.append(value)
+        
+        if not update_fields:
+            return marcacion_id
+            
+        query = f"""
+        UPDATE marcacion 
+        SET {', '.join(update_fields)}
+        WHERE id_marcacion = %s
+        """
+        params.append(marcacion_id)
+        
+        cursor.execute(query, params)
+        connection.commit()
+        cursor.close()
+        
+        logger.info(f"Marcación actualizada ID: {marcacion_id}")
+        return marcacion_id
+        
+    except Exception as e:
+        logger.error(f"Error al actualizar marcación: {e}")
+        if connection:
+            connection.rollback()
+        return None
+    finally:
+        close_connection(connection)
+
+def get_marcacion_reciente_tripulante(id_tripulante: int, id_evento: int) -> Optional[Dict[str, Any]]:
+    """Obtiene la marcación más reciente de un tripulante para un evento"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return None
+            
+        cursor = connection.cursor()
+        query = """
+        SELECT id_marcacion, fecha_marcacion, hora_entrada, hora_salida, tipo_marcacion
+        FROM marcacion 
+        WHERE id_tripulante = %s AND id_evento = %s
+        ORDER BY fecha_marcacion DESC, hora_marcacion DESC
+        LIMIT 1
+        """
+        cursor.execute(query, (id_tripulante, id_evento))
+        marcacion = cursor.fetchone()
+        cursor.close()
+        
+        return marcacion
+        
+    except Exception as e:
+        logger.error(f"Error al obtener marcación reciente: {e}")
+        return None
+    finally:
+        close_connection(connection)
+
 def get_marcaciones_recientes(limit: int = 10) -> List[Dict[str, Any]]:
     """Obtiene las marcaciones más recientes"""
     connection = None
@@ -362,5 +471,41 @@ def get_marcaciones_recientes(limit: int = 10) -> List[Dict[str, Any]]:
     except Exception as e:
         logger.error(f"Error al obtener marcaciones recientes: {e}")
         return []
+    finally:
+        close_connection(connection)
+
+def update_planificacion_estatus(id_planificacion: int, nuevo_estatus: str) -> bool:
+    """Actualiza el estatus de una planificación"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return False
+            
+        cursor = connection.cursor()
+        
+        query = """
+        UPDATE planificacion 
+        SET estatus = %s
+        WHERE id = %s
+        """
+        
+        cursor.execute(query, (nuevo_estatus, id_planificacion))
+        rows_affected = cursor.rowcount
+        connection.commit()
+        cursor.close()
+        
+        if rows_affected > 0:
+            logger.info(f"Estatus de planificación {id_planificacion} actualizado a {nuevo_estatus}")
+            return True
+        else:
+            logger.warning(f"No se pudo actualizar estatus de planificación {id_planificacion}")
+            return False
+        
+    except Exception as e:
+        logger.error(f"Error al actualizar estatus de planificación: {e}")
+        if connection:
+            connection.rollback()
+        return False
     finally:
         close_connection(connection)

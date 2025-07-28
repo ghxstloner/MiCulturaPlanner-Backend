@@ -86,21 +86,6 @@ class SystemVerifier:
             self.log_error(f"Error al conectar a la base de datos: {str(e)}")
             return False
     
-    def verify_face_embeddings_table(self) -> bool:
-        """Verifica que existe la tabla face_embeddings"""
-        logger.info("🔍 Verificando tabla face_embeddings...")
-        
-        try:
-            if create_face_embeddings_table():
-                self.log_success("Tabla face_embeddings verificada/creada")
-                return True
-            else:
-                self.log_error("No se pudo crear/verificar tabla face_embeddings")
-                return False
-        except Exception as e:
-            self.log_error(f"Error con tabla face_embeddings: {str(e)}")
-            return False
-    
     def verify_tripulantes_data(self) -> bool:
         """Verifica que existan tripulantes con imágenes"""
         logger.info("🔍 Verificando datos de tripulantes...")
@@ -288,7 +273,6 @@ class SystemVerifier:
             ("Dependencias", self.verify_dependencies),
             ("Directorios", self.verify_directories),
             ("Conexión base de datos", self.verify_database_connection),
-            ("Tabla face_embeddings", self.verify_face_embeddings_table),
             ("Datos de tripulantes", self.verify_tripulantes_data),
             ("Acceso a imágenes", self.verify_image_url_access),
             ("Embeddings existentes", self.check_existing_embeddings),

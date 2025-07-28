@@ -22,7 +22,9 @@ from app.utils.face_embeddings import (
     save_face_embedding, find_best_face_matches, get_face_embedding_by_crew_id
 )
 from app.db.database import (
-    get_tripulante_by_field, get_planificacion_evento, create_marcacion
+    get_tripulante_by_field, get_planificacion_evento, create_marcacion, 
+    verificar_marcacion_existente, get_marcacion_reciente_tripulante,
+    update_planificacion_estatus
 )
 from app.core.config import settings
 
@@ -107,8 +109,8 @@ async def recognize_face_and_mark_attendance(
         faces_count = detect_faces_count(temp_file_path)
         if faces_count == 0:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No se detectó ningún rostro en la imagen. Asegúrese de que su rostro esté bien iluminado y visible."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mejora la luz para acertar el reconocimiento facial"
             )
         elif faces_count > 1:
             raise HTTPException(
@@ -120,8 +122,8 @@ async def recognize_face_and_mark_attendance(
         embedding = await asyncio.to_thread(extract_face_embedding, temp_file_path)
         if embedding is None:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="No se pudo procesar el rostro. Mejore la iluminación y posición frontal."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mejora la luz para acertar el reconocimiento facial"
             )
         
         # Buscar coincidencias en la base de datos
@@ -134,7 +136,7 @@ async def recognize_face_and_mark_attendance(
         if not matches:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Rostro no reconocido. Verifique que esté registrado en el sistema."
+                detail="Mejora la luz para acertar el reconocimiento facial"
             )
         
         best_match = matches[0]
@@ -143,8 +145,8 @@ async def recognize_face_and_mark_attendance(
         # Verificar confianza mínima
         if confidence < settings.FACE_CONFIDENCE_THRESHOLD:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Reconocimiento insuficiente. Mejore la iluminación y posición frontal."
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Mejora la luz para acertar el reconocimiento facial"
             )
         
         # Verificar ambigüedad entre matches
@@ -152,8 +154,8 @@ async def recognize_face_and_mark_attendance(
             second_confidence = matches[1]['confidence']
             if (confidence - second_confidence) < 0.10:
                 raise HTTPException(
-                    status_code=status.HTTP_400_BAD_REQUEST,
-                    detail="Rostro ambiguo. Mejore la iluminación y posición frontal."
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="Mejora la luz para acertar el reconocimiento facial"
                 )
         
         # Obtener información del tripulante
@@ -163,7 +165,7 @@ async def recognize_face_and_mark_attendance(
         if not tripulante:
             raise HTTPException(
                 status_code=status.HTTP_404_NOT_FOUND,
-                detail="Tripulante reconocido pero no encontrado en el sistema."
+                detail="Mejora la luz para acertar el reconocimiento facial"
             )
         
         if tripulante['estatus'] != 1:
@@ -177,18 +179,36 @@ async def recognize_face_and_mark_attendance(
         if not planificacion:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"El tripulante no está planificado para este evento."
+                detail=f"El colaborador {tripulante['nombres']} {tripulante['apellidos']} con la posición {crew_id} no está planificado para este evento."
             )
         
         planificacion_actual = planificacion[0]
         
-        # Determinar tipo de marcación (entrada o salida)
+        # Determinar tipo de marcación basado en marcaciones previas
         fecha_actual = date.today()
         hora_actual = datetime.now().time()
         
-        # Verificar si ya tiene marcación de entrada para hoy
-        # (simplificado - en producción revisar la lógica completa)
-        tipo_marcacion = 1  # Por defecto entrada
+        # Verificar marcaciones existentes para hoy
+        marcacion_existente = verificar_marcacion_existente(
+            tripulante['id_tripulante'], 
+            id_evento, 
+            fecha_actual
+        )
+        
+        if marcacion_existente:
+            # Ya existe marcación, determinar si es entrada o salida
+            if marcacion_existente.get('hora_entrada') and not marcacion_existente.get('hora_salida'):
+                # Ya tiene entrada, esta será salida
+                tipo_marcacion = 2
+                tipo_texto = "Salida"
+            else:
+                # Ya tiene ambas, actualizar salida
+                tipo_marcacion = 2
+                tipo_texto = "Salida"
+        else:
+            # Primera marcación del día
+            tipo_marcacion = 1
+            tipo_texto = "Entrada"
         
         # Crear datos de marcación
         marcacion_data = {
@@ -197,29 +217,47 @@ async def recognize_face_and_mark_attendance(
             'id_tripulante': tripulante['id_tripulante'],
             'crew_id': crew_id,
             'fecha_marcacion': fecha_actual,
-            'hora_entrada': hora_actual if tipo_marcacion == 1 else None,
+            'hora_entrada': hora_actual if tipo_marcacion == 1 else marcacion_existente.get('hora_entrada'),
             'hora_salida': hora_actual if tipo_marcacion == 2 else None,
             'hora_marcacion': hora_actual,
             'lugar_marcacion': planificacion_actual.get('id_lugar', 1),
             'punto_control': 1,
-            'procesado': '0',
+            'procesado': '1' if tipo_marcacion == 2 else '0',  # Marcar como procesado cuando es salida
             'tipo_marcacion': tipo_marcacion,
             'usuario': current_user.login,
             'transporte': 0.00,
             'alimentacion': 0.00
         }
         
-        # Guardar marcación
-        marcacion_id = create_marcacion(marcacion_data)
+        # Guardar o actualizar marcación
+        if marcacion_existente:
+            # Actualizar marcación existente
+            from app.db.database import update_marcacion
+            marcacion_id = update_marcacion(marcacion_existente['id_marcacion'], marcacion_data)
+        else:
+            # Crear nueva marcación
+            marcacion_id = create_marcacion(marcacion_data)
+        
         if not marcacion_id:
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Error al registrar la marcación."
             )
         
-        # Preparar respuesta
+        # Si es la segunda marcación (salida), actualizar el estatus de la planificación
+        if tipo_marcacion == 2:
+            # Actualizar estatus de planificación de 'P' (Pendiente) a 'R' (Realizado)
+            estatus_actualizado = update_planificacion_estatus(
+                planificacion_actual['id'], 
+                'R'
+            )
+            if not estatus_actualizado:
+                logger.warning(f"No se pudo actualizar estatus de planificación {planificacion_actual['id']}")
+            else:
+                logger.info(f"Estatus de planificación {planificacion_actual['id']} actualizado a 'R'")
+        
+        # Preparar respuesta con mensajes específicos
         processing_time = time.time() - start_time
-        tipo_texto = "Entrada" if tipo_marcacion == 1 else "Salida"
         
         tripulante_info = {
             'crew_id': crew_id,
@@ -230,6 +268,17 @@ async def recognize_face_and_mark_attendance(
             'cargo': tripulante.get('descripcion_cargo', 'N/A')
         }
         
+        # Formatear hora para el mensaje
+        hora_formatted = format_time_display(datetime.combine(fecha_actual, hora_actual))
+        
+        # Crear mensaje específico según el tipo de marcación
+        if tipo_marcacion == 1:
+            # Primera marcación (entrada)
+            message = f"Marcación a la hora de inicio del evento {hora_formatted}"
+        else:
+            # Segunda marcación (salida) 
+            message = f"Marcación de finalización del evento"
+        
         marcacion_info = {
             'id_marcacion': marcacion_id,
             'tipo_marcacion': tipo_texto,
@@ -238,7 +287,17 @@ async def recognize_face_and_mark_attendance(
             'evento': planificacion_actual.get('descripcion_evento', 'N/A')
         }
         
-        message = f"{tipo_texto} registrada para {tripulante['nombres']} {tripulante['apellidos']} a las {format_time_display(datetime.combine(fecha_actual, hora_actual))}"
+        # Agregar matches encontrados para debug
+        matches_info = []
+        for match in matches:
+            matches_info.append({
+                'crew_id': match['crew_id'],
+                'nombres': match['nombres'],
+                'apellidos': match['apellidos'],
+                'confidence': match['confidence'],
+                'distance': match['distance'],
+                'id_tripulante': match['id_tripulante']
+            })
         
         logger.info(f"Reconocimiento exitoso: {crew_id} - {message}")
         
@@ -247,6 +306,7 @@ async def recognize_face_and_mark_attendance(
             message=message,
             tripulante_info=tripulante_info,
             marcacion_info=marcacion_info,
+            matches_found=matches_info,
             processing_time=processing_time
         )
         
