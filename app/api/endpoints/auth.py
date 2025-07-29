@@ -20,8 +20,8 @@ async def login(login_data: LoginRequest):
     """
     try:
         # Autenticar usuario
-        user = authenticate_user(login_data.login, login_data.password)
-        
+        user = await authenticate_user(login_data.login, login_data.password)
+
         if not user:
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
