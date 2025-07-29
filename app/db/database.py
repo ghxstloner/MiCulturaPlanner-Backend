@@ -561,7 +561,7 @@ def get_dashboard_stats():
         cursor = connection.cursor()
         query = """
         SELECT 
-            (SELECT COUNT(*) FROM eventos WHERE estatus = 1) as totalEventos,
+            (SELECT COUNT(*) FROM eventos) as totalEventos,
             (SELECT COUNT(*) FROM eventos WHERE DATE(fecha_evento) = CURDATE() AND estatus = 1) as eventosHoy,
             (SELECT COUNT(*) FROM eventos WHERE estatus = 1) as eventosActivos,
             (SELECT COUNT(*) FROM marcacion WHERE DATE(fecha_marcacion) = CURDATE()) as totalAsistencias
