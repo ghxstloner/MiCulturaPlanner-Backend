@@ -1,7 +1,10 @@
 """
+app/utils/auth.py - MODIFICADO Y SIMPLIFICADO
 Utilidades de autenticación y autorización
 """
 import logging
+import asyncio
+import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
 from jose import JWTError, jwt
@@ -14,16 +17,17 @@ from app.models.user import User
 
 logger = logging.getLogger(__name__)
 
-# Configuración de seguridad
+# Configuración de seguridad: Se mantiene por si se crean nuevos usuarios con bcrypt
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
 # Configuración JWT
 ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 30
+ACCESS_TOKEN_EXPIRE_MINUTES = 60 
 
+# La función verify_password se mantiene por si se usa en otra parte del código
 def verify_password(plain_password: str, hashed_password: str) -> bool:
-    """Verifica una contraseña contra su hash"""
+    """Verifica una contraseña contra su hash bcrypt"""
     try:
         return pwd_context.verify(plain_password, hashed_password)
     except Exception as e:
@@ -31,7 +35,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         return False
 
 def get_password_hash(password: str) -> str:
-    """Genera el hash de una contraseña"""
+    """Genera el hash de una contraseña usando bcrypt"""
     return pwd_context.hash(password)
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
@@ -64,25 +68,25 @@ def verify_token(token: str) -> Optional[dict]:
         logger.warning(f"Token inválido: {str(e)}")
         return None
 
-def authenticate_user(login: str, password: str) -> Optional[User]:
-    """Autentica un usuario con login y contraseña"""
+# ----- MODIFICACIÓN CLAVE -----
+# Se simplificó la función para usar únicamente SHA256
+async def authenticate_user(login: str, password: str) -> Optional[User]:
+    """Autentica un usuario usando SHA256 de forma asíncrona"""
     try:
-        user_data = get_user_by_login(login)
+        # La consulta a la BD es la causa más probable de lentitud.
+        # La ejecutamos en un executor para no bloquear el servidor.
+        loop = asyncio.get_running_loop()
+        user_data = await loop.run_in_executor(None, get_user_by_login, login)
+
         if not user_data:
             logger.warning(f"Usuario no encontrado: {login}")
             return None
         
-        # En el sistema original, las contraseñas están hasheadas con SHA256
-        # Verificamos primero si es SHA256, sino usamos bcrypt
         stored_password = user_data['pswd']
         
-        if len(stored_password) == 64:  # SHA256 hex string
-            import hashlib
-            password_sha256 = hashlib.sha256(password.encode()).hexdigest()
-            password_valid = password_sha256 == stored_password
-        else:
-            # Asumir que es bcrypt
-            password_valid = verify_password(password, stored_password)
+        # Verificación de contraseña usando SHA256. Es un proceso muy rápido.
+        password_sha256 = hashlib.sha256(password.encode()).hexdigest()
+        password_valid = (password_sha256 == stored_password)
         
         if not password_valid:
             logger.warning(f"Contraseña incorrecta para usuario: {login}")
@@ -93,6 +97,8 @@ def authenticate_user(login: str, password: str) -> Optional[User]:
     except Exception as e:
         logger.error(f"Error al autenticar usuario {login}: {str(e)}")
         return None
+
+# ----- FIN DE LA MODIFICACIÓN CLAVE -----
 
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     """Obtiene el usuario actual desde el token JWT"""
@@ -113,7 +119,9 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if login is None:
             raise credentials_exception
         
-        user_data = get_user_by_login(login)
+        loop = asyncio.get_running_loop()
+        user_data = await loop.run_in_executor(None, get_user_by_login, login)
+
         if user_data is None:
             raise credentials_exception
         
