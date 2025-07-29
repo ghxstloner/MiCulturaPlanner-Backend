@@ -727,3 +727,27 @@ def get_reportes_stats():
         'eventosFinalizados': stats.get('eventosFinalizados', 0),
         'promedioAsistencia': stats.get('promedioAsistencia', 0)
     }
+
+def get_total_tripulantes():
+    """Obtiene el total de tripulantes activos"""
+    connection = None
+    try:
+        connection = get_db_connection()
+        if not connection:
+            return 0
+            
+        cursor = connection.cursor()
+        query = "SELECT COUNT(*) as total FROM tripulantes WHERE estatus = 1"
+        cursor.execute(query)
+        result = cursor.fetchone()
+        cursor.close()
+        
+        total = result['total'] if result else 0
+        logger.debug(f"Total tripulantes activos: {total}")
+        return total
+        
+    except Exception as e:
+        logger.error(f"Error al obtener total de tripulantes: {e}")
+        return 0
+    finally:
+        close_connection(connection)
