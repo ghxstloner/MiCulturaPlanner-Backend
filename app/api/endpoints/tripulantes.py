@@ -7,7 +7,7 @@ from fastapi import APIRouter, HTTPException, status, Depends, Query
 from app.schemas.responses import StandardResponse
 from app.utils.auth import get_current_active_user
 from app.models.user import User
-from app.db.database import get_tripulante_by_field, get_todos_tripulantes
+from app.db.database import get_tripulante_by_field, get_todos_tripulantes, get_total_tripulantes
 
 router = APIRouter()
 logger = logging.getLogger(__name__)
@@ -19,16 +19,26 @@ async def get_all_tripulantes(
     current_user: User = Depends(get_current_active_user)
 ):
     """
-    Obtiene todos los tripulantes activos
+    Obtiene todos los tripulantes activos con paginación
     """
     try:
+        # Obtener el total de tripulantes
+        total_tripulantes = get_total_tripulantes()
+        
+        # Obtener tripulantes paginados
         tripulantes = get_todos_tripulantes(offset=offset, limit=limit)
         
         if not tripulantes:
             return StandardResponse(
                 success=True,
                 message="No se encontraron tripulantes",
-                data=[]
+                data=[],
+                metadata={
+                    "total": total_tripulantes,
+                    "offset": offset,
+                    "limit": limit,
+                    "has_more": False
+                }
             )
         
         tripulantes_formateados = []
@@ -48,10 +58,20 @@ async def get_all_tripulantes(
             }
             tripulantes_formateados.append(tripulante_data)
         
+        # Calcular si hay más páginas
+        has_more = (offset + limit) < total_tripulantes
+        
         return StandardResponse(
             success=True,
             message=f"Se encontraron {len(tripulantes_formateados)} tripulantes",
-            data=tripulantes_formateados
+            data=tripulantes_formateados,
+            metadata={
+                "total": total_tripulantes,
+                "offset": offset,
+                "limit": limit,
+                "has_more": has_more,
+                "current_page_count": len(tripulantes_formateados)
+            }
         )
         
     except Exception as e:
