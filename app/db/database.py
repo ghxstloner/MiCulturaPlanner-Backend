@@ -10,6 +10,7 @@ import threading
 from datetime import date
 from app.core.config import settings
 import base64
+import time
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,14 @@ def get_connection_pool() -> Optional[PooledDB]:
                     port=settings.DB_PORT,
                     charset='utf8mb4',
                     cursorclass=pymysql.cursors.DictCursor,
-                    autocommit=False
+                    autocommit=True,  # ✅ IMPORTANTE: autocommit en pool
+                    # ✅ TIMEOUTS AGRESIVOS PARA PYMYSQL
+                    connect_timeout=5,      # 5 segundos max para conectar
+                    read_timeout=10,       # 10 segundos max para leer
+                    write_timeout=10,      # 10 segundos max para escribir
+                    # ✅ CONFIGURACIÓN ADICIONAL
+                    ping=1,                # Enable ping para validar conexiones
+                    reset=True,            # Reset estado de conexión al devolver al pool
                 )
                 logger.info("Pool de conexiones inicializado exitosamente")
             except Exception as e:
@@ -48,19 +56,34 @@ def get_connection_pool() -> Optional[PooledDB]:
     return _connection_pool
 
 def get_db_connection() -> Optional[pymysql.connections.Connection]:
-    """Obtiene una conexión del pool"""
+    """Obtiene una conexión del pool con timeout agresivo"""
+    start_time = time.time()
+    
     try:
         pool = get_connection_pool()
         if pool is None:
             logger.error("Pool de conexiones no disponible")
             return None
-            
+        
+        logger.debug("🔍 Solicitando conexión del pool...")
+        
+        # ✅ TIMEOUT BRUTAL: Si no obtenemos conexión en 5 segundos, algo está mal
         connection = pool.connection()
-        logger.debug("Conexión obtenida del pool")
+        
+        elapsed = (time.time() - start_time) * 1000
+        logger.debug(f"✅ Conexión obtenida en {elapsed:.2f}ms")
+        
+        # ✅ VALIDAR que la conexión funciona
+        cursor = connection.cursor()
+        cursor.execute("SELECT 1")
+        cursor.fetchone()
+        cursor.close()
+        
         return connection
         
     except Exception as e:
-        logger.error(f"Error al obtener conexión del pool: {e}")
+        elapsed = (time.time() - start_time) * 1000
+        logger.error(f"❌ Error obteniendo conexión después de {elapsed:.2f}ms: {e}")
         return None
 
 def close_connection(connection: Optional[pymysql.connections.Connection]):
@@ -72,6 +95,29 @@ def close_connection(connection: Optional[pymysql.connections.Connection]):
                 logger.debug("Conexión cerrada y devuelta al pool")
         except Exception as e:
             logger.warning(f"Error al cerrar conexión: {e}")
+
+# ✅ NUEVA FUNCIÓN DE EMERGENCIA - conexión directa sin pool
+def get_direct_connection() -> Optional[pymysql.connections.Connection]:
+    """Conexión directa a MySQL sin pool - para emergencias"""
+    try:
+        logger.info("🚨 Usando conexión directa (sin pool)")
+        connection = pymysql.connect(
+            host=settings.DB_HOST,
+            user=settings.DB_USER,
+            password=settings.DB_PASSWORD,
+            database=settings.DB_NAME,
+            port=settings.DB_PORT,
+            charset='utf8mb4',
+            cursorclass=pymysql.cursors.DictCursor,
+            autocommit=True,
+            connect_timeout=5,
+            read_timeout=10,
+            write_timeout=10
+        )
+        return connection
+    except Exception as e:
+        logger.error(f"Error en conexión directa: {e}")
+        return None
 
 def test_connection() -> bool:
     """Prueba la conexión a la base de datos"""
@@ -95,16 +141,30 @@ def test_connection() -> bool:
     finally:
         close_connection(connection)
 
-# --- Funciones específicas del negocio ---
-
 def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
     """Obtiene un usuario por su login"""
     connection = None
+    start_time = time.time()
+    
     try:
+        logger.info(f"🔍 Buscando usuario: {login}")
+        
+        # ✅ INTENTAR POOL PRIMERO
         connection = get_db_connection()
+        
+        # ✅ SI POOL FALLA, USAR CONEXIÓN DIRECTA
         if not connection:
+            logger.warning("Pool falló, usando conexión directa")
+            connection = get_direct_connection()
+        
+        if not connection:
+            logger.error("❌ No se pudo obtener ninguna conexión")
             return None
-            
+        
+        elapsed_conn = (time.time() - start_time) * 1000
+        logger.info(f"✅ Conexión obtenida en {elapsed_conn:.2f}ms")
+        
+        query_start = time.time()
         cursor = connection.cursor()
         query = """
         SELECT login, pswd, name, email, active, priv_admin, id_aerolinea, picture
@@ -115,11 +175,15 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
         user = cursor.fetchone()
         cursor.close()
         
+        elapsed_query = (time.time() - query_start) * 1000
+        elapsed_total = (time.time() - start_time) * 1000
+        
+        logger.info(f"✅ Query ejecutada en {elapsed_query:.2f}ms, total: {elapsed_total:.2f}ms")
+        
         if user and user.get('picture'):
             # Convertir bytes a base64 si es necesario
             if isinstance(user['picture'], bytes):
                 user['picture'] = base64.b64encode(user['picture']).decode('utf-8')
-            # Si ya es string, dejarlo como está
             elif not isinstance(user['picture'], str):
                 user['picture'] = None
         
@@ -127,7 +191,8 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
         return user
         
     except Exception as e:
-        logger.error(f"Error al obtener usuario {login}: {e}")
+        elapsed = (time.time() - start_time) * 1000
+        logger.error(f"❌ Error después de {elapsed:.2f}ms en get_user_by_login: {e}")
         return None
     finally:
         close_connection(connection)
@@ -717,16 +782,6 @@ def get_reportes_stats_completos():
         return {}
     finally:
         close_connection(connection)
-
-def get_reportes_stats():
-    """Obtiene estadísticas para reportes (mantiene compatibilidad)"""
-    stats = get_reportes_stats_completos()
-    return {
-        'totalEventos': stats.get('totalEventos', 0),
-        'eventosActivos': stats.get('eventosActivos', 0), 
-        'eventosFinalizados': stats.get('eventosFinalizados', 0),
-        'promedioAsistencia': stats.get('promedioAsistencia', 0)
-    }
 
 def get_total_tripulantes():
     """Obtiene el total de tripulantes activos"""

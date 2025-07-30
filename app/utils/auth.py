@@ -1,9 +1,7 @@
 """
-app/utils/auth.py - MODIFICADO Y SIMPLIFICADO
-Utilidades de autenticación y autorización
+Utilidades de autenticación y autorización - OPTIMIZADO
 """
 import logging
-import asyncio
 import hashlib
 from datetime import datetime, timedelta
 from typing import Optional
@@ -14,10 +12,11 @@ from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from app.core.config import settings
 from app.db.database import get_user_by_login
 from app.models.user import User
+import time
 
 logger = logging.getLogger(__name__)
 
-# Configuración de seguridad: Se mantiene por si se crean nuevos usuarios con bcrypt
+# Configuración de seguridad
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 security = HTTPBearer()
 
@@ -25,7 +24,6 @@ security = HTTPBearer()
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 
 
-# La función verify_password se mantiene por si se usa en otra parte del código
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Verifica una contraseña contra su hash bcrypt"""
     try:
@@ -68,15 +66,24 @@ def verify_token(token: str) -> Optional[dict]:
         logger.warning(f"Token inválido: {str(e)}")
         return None
 
-# ----- MODIFICACIÓN CLAVE -----
-# Se simplificó la función para usar únicamente SHA256
-async def authenticate_user(login: str, password: str) -> Optional[User]:
-    """Autentica un usuario usando SHA256 de forma asíncrona"""
+# ✅ FUNCIÓN OPTIMIZADA - ya no usa asyncio
+def authenticate_user(login: str, password: str) -> Optional[User]:
+    """
+    Autentica un usuario usando SHA256 - VERSIÓN SÍNCRONA OPTIMIZADA
+    
+    Esta función ahora es síncrona para evitar problemas con el event loop
+    y la conexión a la base de datos.
+    """
+    start_time = time.time()
+    
     try:
-        # La consulta a la BD es la causa más probable de lentitud.
-        # La ejecutamos en un executor para no bloquear el servidor.
-        loop = asyncio.get_running_loop()
-        user_data = await loop.run_in_executor(None, get_user_by_login, login)
+        logger.info(f"🔐 Autenticando usuario: {login}")
+        
+        # ✅ LLAMADA SÍNCRONA DIRECTA - sin asyncio ni executors
+        user_data = get_user_by_login(login)
+        
+        elapsed_db = (time.time() - start_time) * 1000
+        logger.info(f"✅ Consulta DB completada en {elapsed_db:.2f}ms")
 
         if not user_data:
             logger.warning(f"Usuario no encontrado: {login}")
@@ -84,9 +91,12 @@ async def authenticate_user(login: str, password: str) -> Optional[User]:
         
         stored_password = user_data['pswd']
         
-        # Verificación de contraseña usando SHA256. Es un proceso muy rápido.
+        # ✅ VERIFICACIÓN SHA256 (instantánea)
         password_sha256 = hashlib.sha256(password.encode()).hexdigest()
         password_valid = (password_sha256 == stored_password)
+        
+        elapsed_total = (time.time() - start_time) * 1000
+        logger.info(f"✅ Autenticación completada en {elapsed_total:.2f}ms")
         
         if not password_valid:
             logger.warning(f"Contraseña incorrecta para usuario: {login}")
@@ -95,11 +105,11 @@ async def authenticate_user(login: str, password: str) -> Optional[User]:
         return User(**user_data)
         
     except Exception as e:
-        logger.error(f"Error al autenticar usuario {login}: {str(e)}")
+        elapsed_error = (time.time() - start_time) * 1000
+        logger.error(f"❌ Error autenticando usuario {login} después de {elapsed_error:.2f}ms: {str(e)}")
         return None
 
-# ----- FIN DE LA MODIFICACIÓN CLAVE -----
-
+# ✅ FUNCIÓN ASYNC SIMPLIFICADA
 async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> User:
     """Obtiene el usuario actual desde el token JWT"""
     credentials_exception = HTTPException(
@@ -119,8 +129,8 @@ async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(s
         if login is None:
             raise credentials_exception
         
-        loop = asyncio.get_running_loop()
-        user_data = await loop.run_in_executor(None, get_user_by_login, login)
+        # ✅ LLAMADA SÍNCRONA DIRECTA - sin executor
+        user_data = get_user_by_login(login)
 
         if user_data is None:
             raise credentials_exception

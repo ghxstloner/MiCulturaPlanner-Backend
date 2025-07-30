@@ -1,7 +1,8 @@
 """
-Endpoints de autenticación
+Endpoints de autenticación - OPTIMIZADO
 """
 import logging
+import time
 from datetime import timedelta
 from fastapi import APIRouter, HTTPException, status, Depends
 from fastapi.responses import JSONResponse
@@ -16,27 +17,40 @@ logger = logging.getLogger(__name__)
 @router.post("/login", response_model=LoginResponse)
 async def login(login_data: LoginRequest):
     """
-    Autentica un usuario y devuelve un token de acceso
+    Autentica un usuario y devuelve un token de acceso - OPTIMIZADO
     """
+    start_time = time.time()
+    
     try:
-        # Autenticar usuario
-        user = await authenticate_user(login_data.login, login_data.password)
+        logger.info(f"🔐 [LOGIN] Iniciando autenticación para: {login_data.login}")
+        
+        # ✅ AUTENTICACIÓN SÍNCRONA (ya no async)
+        auth_start = time.time()
+        user = authenticate_user(login_data.login, login_data.password)
+        auth_elapsed = (time.time() - auth_start) * 1000
+        
+        logger.info(f"🔐 [LOGIN] Autenticación completada en {auth_elapsed:.2f}ms")
 
         if not user:
+            logger.warning(f"🔐 [LOGIN] Credenciales inválidas para: {login_data.login}")
             raise HTTPException(
                 status_code=status.HTTP_401_UNAUTHORIZED,
                 detail="Usuario o contraseña incorrectos",
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # Crear token de acceso
+        # ✅ CREAR TOKEN (operación rápida)
+        token_start = time.time()
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
             data={"sub": user.login}, 
             expires_delta=access_token_expires
         )
+        token_elapsed = (time.time() - token_start) * 1000
         
-        # Información del usuario para la respuesta
+        logger.info(f"🔐 [LOGIN] Token generado en {token_elapsed:.2f}ms")
+        
+        # ✅ PREPARAR RESPUESTA (operación rápida)
         user_info = {
             "login": user.login,
             "name": user.name,
@@ -47,7 +61,8 @@ async def login(login_data: LoginRequest):
             "picture": user.picture
         }
         
-        logger.info(f"Usuario autenticado exitosamente: {user.login}")
+        total_elapsed = (time.time() - start_time) * 1000
+        logger.info(f"🔐 [LOGIN] ✅ Login exitoso para {user.login} en {total_elapsed:.2f}ms TOTAL")
         
         return LoginResponse(
             access_token=access_token,
@@ -59,7 +74,8 @@ async def login(login_data: LoginRequest):
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error en login: {str(e)}")
+        total_elapsed = (time.time() - start_time) * 1000
+        logger.error(f"🔐 [LOGIN] ❌ Error después de {total_elapsed:.2f}ms: {str(e)}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor"

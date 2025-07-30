@@ -4,6 +4,7 @@ Aplicación principal de CulturaConnect Facial Recognition API
 import os
 import sys
 import logging
+import time
 from contextlib import asynccontextmanager
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -94,6 +95,28 @@ app = FastAPI(
     lifespan=lifespan,
     debug=settings.DEBUG
 )
+
+# ✅ MIDDLEWARE DE DEBUG PARA RASTREAR TIMING
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    start_time = time.time()
+    
+    # Log del inicio de la petición
+    logger.info(f"🌐 [{request.method}] {request.url.path} - INICIANDO")
+    
+    # Ejecutar la petición
+    response = await call_next(request)
+    
+    # Calcular tiempo de procesamiento
+    process_time = (time.time() - start_time) * 1000
+    
+    # Log del final de la petición con tiempo
+    logger.info(f"🌐 [{request.method}] {request.url.path} - COMPLETADO en {process_time:.2f}ms (Status: {response.status_code})")
+    
+    # Agregar header con tiempo de procesamiento
+    response.headers["X-Process-Time"] = f"{process_time:.2f}ms"
+    
+    return response
 
 # Configurar CORS
 app.add_middleware(
