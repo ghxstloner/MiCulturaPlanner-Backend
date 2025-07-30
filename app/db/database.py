@@ -780,22 +780,34 @@ def get_total_tripulantes():
     """Obtiene el total de tripulantes activos"""
     connection = None
     try:
+        logger.info("🔍 Iniciando get_total_tripulantes()")
+        
         connection = get_db_connection()
         if not connection:
+            logger.error("❌ No se pudo obtener conexión en get_total_tripulantes")
             return 0
             
+        logger.info("✅ Conexión obtenida en get_total_tripulantes")
+        
         cursor = connection.cursor()
         query = "SELECT COUNT(*) as total FROM tripulantes WHERE estatus = 1"
+        
+        logger.info(f"🔍 Ejecutando query: {query}")
         cursor.execute(query)
         result = cursor.fetchone()
         cursor.close()
         
+        logger.info(f"📊 Resultado raw: {result}")
+        
         total = result['total'] if result else 0
-        logger.debug(f"Total tripulantes activos: {total}")
+        logger.info(f"✅ Total tripulantes activos: {total}")
         return total
         
     except Exception as e:
-        logger.error(f"Error al obtener total de tripulantes: {e}")
+        logger.error(f"❌ Error al obtener total de tripulantes: {e}")
+        logger.error(f"❌ Tipo de error: {type(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         return 0
     finally:
         close_connection(connection)
