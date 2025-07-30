@@ -25,7 +25,6 @@ def get_connection_pool() -> Optional[PooledDB]:
     with _pool_lock:
         if _connection_pool is None:
             try:
-                logger.info("Inicializando pool de conexiones a la base de datos")
                 _connection_pool = PooledDB(
                     creator=pymysql,
                     maxconnections=20,
@@ -48,7 +47,6 @@ def get_connection_pool() -> Optional[PooledDB]:
                     ping=1,                # Enable ping para validar conexiones
                     reset=True,            # Reset estado de conexión al devolver al pool
                 )
-                logger.info("Pool de conexiones inicializado exitosamente")
             except Exception as e:
                 logger.error(f"Error al inicializar pool de conexiones: {e}")
                 _connection_pool = None
@@ -57,21 +55,14 @@ def get_connection_pool() -> Optional[PooledDB]:
 
 def get_db_connection() -> Optional[pymysql.connections.Connection]:
     """Obtiene una conexión del pool con timeout agresivo"""
-    start_time = time.time()
-    
     try:
         pool = get_connection_pool()
         if pool is None:
             logger.error("Pool de conexiones no disponible")
             return None
         
-        logger.debug("🔍 Solicitando conexión del pool...")
-        
         # ✅ TIMEOUT BRUTAL: Si no obtenemos conexión en 5 segundos, algo está mal
         connection = pool.connection()
-        
-        elapsed = (time.time() - start_time) * 1000
-        logger.debug(f"✅ Conexión obtenida en {elapsed:.2f}ms")
         
         # ✅ VALIDAR que la conexión funciona
         cursor = connection.cursor()
@@ -82,8 +73,7 @@ def get_db_connection() -> Optional[pymysql.connections.Connection]:
         return connection
         
     except Exception as e:
-        elapsed = (time.time() - start_time) * 1000
-        logger.error(f"❌ Error obteniendo conexión después de {elapsed:.2f}ms: {e}")
+        logger.error(f"❌ Error obteniendo conexión: {e}")
         return None
 
 def close_connection(connection: Optional[pymysql.connections.Connection]):
@@ -92,7 +82,6 @@ def close_connection(connection: Optional[pymysql.connections.Connection]):
         try:
             if not connection._closed:
                 connection.close()
-                logger.debug("Conexión cerrada y devuelta al pool")
         except Exception as e:
             logger.warning(f"Error al cerrar conexión: {e}")
 
@@ -100,7 +89,6 @@ def close_connection(connection: Optional[pymysql.connections.Connection]):
 def get_direct_connection() -> Optional[pymysql.connections.Connection]:
     """Conexión directa a MySQL sin pool - para emergencias"""
     try:
-        logger.info("🚨 Usando conexión directa (sin pool)")
         connection = pymysql.connect(
             host=settings.DB_HOST,
             user=settings.DB_USER,
@@ -132,7 +120,6 @@ def test_connection() -> bool:
         result = cursor.fetchone()
         cursor.close()
         
-        logger.info("Conexión a base de datos verificada exitosamente")
         return result is not None
         
     except Exception as e:
@@ -144,10 +131,7 @@ def test_connection() -> bool:
 def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
     """Obtiene un usuario por su login - SIN PICTURE"""
     connection = None
-    start_time = time.time()
-    
     try:
-        logger.info(f"🔍 Buscando usuario: {login}")
         
         connection = get_db_connection()
         
@@ -159,10 +143,6 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
             logger.error("❌ No se pudo obtener ninguna conexión")
             return None
         
-        elapsed_conn = (time.time() - start_time) * 1000
-        logger.info(f"✅ Conexión obtenida en {elapsed_conn:.2f}ms")
-        
-        query_start = time.time()
         cursor = connection.cursor()
         
         # ✅ QUERY SIN PICTURE - ULTRARRÁPIDA
@@ -175,17 +155,10 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
         user = cursor.fetchone()
         cursor.close()
         
-        elapsed_query = (time.time() - query_start) * 1000
-        elapsed_total = (time.time() - start_time) * 1000
-        
-        logger.info(f"✅ Query ejecutada en {elapsed_query:.2f}ms, total: {elapsed_total:.2f}ms")
-        
-        logger.debug(f"Usuario encontrado: {login if user else 'No encontrado'}")
         return user
         
     except Exception as e:
-        elapsed = (time.time() - start_time) * 1000
-        logger.error(f"❌ Error después de {elapsed:.2f}ms en get_user_by_login: {e}")
+        logger.error(f"❌ Error en get_user_by_login: {e}")
         return None
     finally:
         close_connection(connection)
@@ -217,7 +190,6 @@ def get_tripulante_by_field(field: str, value: Any) -> Optional[Dict[str, Any]]:
         tripulante = cursor.fetchone()
         cursor.close()
         
-        logger.debug(f"Tripulante encontrado por {field}={value}: {tripulante['nombres'] if tripulante else 'No encontrado'}")
         return tripulante
         
     except Exception as e:
@@ -252,7 +224,6 @@ def get_eventos_activos() -> List[Dict[str, Any]]:
         eventos = cursor.fetchall()
         cursor.close()
         
-        logger.debug(f"Eventos activos encontrados: {len(eventos)}")
         return eventos
         
     except Exception as e:
@@ -303,7 +274,6 @@ def get_todos_eventos(offset: int = 0, limit: int = 20, filtro_fecha: str = None
         eventos = cursor.fetchall()
         cursor.close()
         
-        logger.debug(f"Eventos encontrados: {len(eventos)} (offset: {offset}, limit: {limit})")
         return eventos
         
     except Exception as e:
@@ -324,6 +294,7 @@ def get_planificacion_evento(id_evento: int, id_tripulante: int = None) -> List[
         base_query = """
         SELECT 
             p.id, p.id_evento, p.id_tripulante, t.crew_id,
+            p.id_lugar,
             p.fecha_vuelo, p.hora_entrada, p.hora_salida, p.estatus,
             t.nombres, t.apellidos, t.identidad, t.imagen,
             e.descripcion_evento, e.fecha_evento,
@@ -355,7 +326,6 @@ def get_planificacion_evento(id_evento: int, id_tripulante: int = None) -> List[
         planificacion = cursor.fetchall()
         cursor.close()
         
-        logger.debug(f"Planificación encontrada para evento {id_evento}: {len(planificacion)} registros")
         return planificacion
         
     except Exception as e:
@@ -420,7 +390,6 @@ def create_marcacion(marcacion_data: Dict[str, Any]) -> Optional[int]:
         connection.commit()
         cursor.close()
         
-        logger.info(f"Marcación creada con ID: {marcacion_id}")
         return marcacion_id
         
     except Exception as e:
@@ -464,7 +433,6 @@ def update_marcacion(marcacion_id: int, marcacion_data: Dict[str, Any]) -> Optio
         connection.commit()
         cursor.close()
         
-        logger.info(f"Marcación actualizada ID: {marcacion_id}")
         return marcacion_id
         
     except Exception as e:
@@ -563,7 +531,6 @@ def update_planificacion_estatus(id_planificacion: int, nuevo_estatus: str) -> b
         cursor.close()
         
         if rows_affected > 0:
-            logger.info(f"Estatus de planificación {id_planificacion} actualizado a {nuevo_estatus}")
             return True
         else:
             logger.warning(f"No se pudo actualizar estatus de planificación {id_planificacion}")
@@ -780,27 +747,20 @@ def get_total_tripulantes():
     """Obtiene el total de tripulantes activos"""
     connection = None
     try:
-        logger.info("🔍 Iniciando get_total_tripulantes()")
-        
         connection = get_db_connection()
         if not connection:
-            logger.error("❌ No se pudo obtener conexión en get_total_tripulantes")
             return 0
             
-        logger.info("✅ Conexión obtenida en get_total_tripulantes")
         
         cursor = connection.cursor()
         query = "SELECT COUNT(*) as total FROM tripulantes WHERE estatus = 1"
         
-        logger.info(f"🔍 Ejecutando query: {query}")
         cursor.execute(query)
         result = cursor.fetchone()
         cursor.close()
         
-        logger.info(f"📊 Resultado raw: {result}")
         
         total = result['total'] if result else 0
-        logger.info(f"✅ Total tripulantes activos: {total}")
         return total
         
     except Exception as e:
