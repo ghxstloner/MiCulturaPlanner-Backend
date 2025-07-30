@@ -1,13 +1,14 @@
 """
 Esquemas para respuestas estándar de la API
 """
-from typing import Any, Optional, List
+from typing import Any, Optional, List, Dict
 from pydantic import BaseModel
 
 class StandardResponse(BaseModel):
     success: bool
     message: str
     data: Optional[Any] = None
+    metadata: Optional[Dict[str, Any]] = None
 
 class ErrorResponse(BaseModel):
     success: bool = False
