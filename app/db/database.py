@@ -142,17 +142,15 @@ def test_connection() -> bool:
         close_connection(connection)
 
 def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
-    """Obtiene un usuario por su login"""
+    """Obtiene un usuario por su login - SIN PICTURE"""
     connection = None
     start_time = time.time()
     
     try:
         logger.info(f"🔍 Buscando usuario: {login}")
         
-        # ✅ INTENTAR POOL PRIMERO
         connection = get_db_connection()
         
-        # ✅ SI POOL FALLA, USAR CONEXIÓN DIRECTA
         if not connection:
             logger.warning("Pool falló, usando conexión directa")
             connection = get_direct_connection()
@@ -166,8 +164,10 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
         
         query_start = time.time()
         cursor = connection.cursor()
+        
+        # ✅ QUERY SIN PICTURE - ULTRARRÁPIDA
         query = """
-        SELECT login, pswd, name, email, active, priv_admin, id_aerolinea, picture
+        SELECT login, pswd, name, email, active, priv_admin, id_aerolinea
         FROM sec_users 
         WHERE login = %s AND active = 'Y'
         """
@@ -179,13 +179,6 @@ def get_user_by_login(login: str) -> Optional[Dict[str, Any]]:
         elapsed_total = (time.time() - start_time) * 1000
         
         logger.info(f"✅ Query ejecutada en {elapsed_query:.2f}ms, total: {elapsed_total:.2f}ms")
-        
-        if user and user.get('picture'):
-            # Convertir bytes a base64 si es necesario
-            if isinstance(user['picture'], bytes):
-                user['picture'] = base64.b64encode(user['picture']).decode('utf-8')
-            elif not isinstance(user['picture'], str):
-                user['picture'] = None
         
         logger.debug(f"Usuario encontrado: {login if user else 'No encontrado'}")
         return user

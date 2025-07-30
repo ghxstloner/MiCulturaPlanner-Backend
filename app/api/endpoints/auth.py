@@ -17,14 +17,13 @@ logger = logging.getLogger(__name__)
 @router.post("/login", response_model=LoginResponse)
 async def login(login_data: LoginRequest):
     """
-    Autentica un usuario y devuelve un token de acceso - OPTIMIZADO
+    Autentica un usuario y devuelve un token de acceso - SIN PICTURE
     """
     start_time = time.time()
     
     try:
         logger.info(f"🔐 [LOGIN] Iniciando autenticación para: {login_data.login}")
         
-        # ✅ AUTENTICACIÓN SÍNCRONA (ya no async)
         auth_start = time.time()
         user = authenticate_user(login_data.login, login_data.password)
         auth_elapsed = (time.time() - auth_start) * 1000
@@ -39,7 +38,6 @@ async def login(login_data: LoginRequest):
                 headers={"WWW-Authenticate": "Bearer"},
             )
         
-        # ✅ CREAR TOKEN (operación rápida)
         token_start = time.time()
         access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
         access_token = create_access_token(
@@ -50,7 +48,7 @@ async def login(login_data: LoginRequest):
         
         logger.info(f"🔐 [LOGIN] Token generado en {token_elapsed:.2f}ms")
         
-        # ✅ PREPARAR RESPUESTA (operación rápida)
+        # ✅ RESPUESTA SIN PICTURE - ULTRALIVIANA
         user_info = {
             "login": user.login,
             "name": user.name,
@@ -58,7 +56,8 @@ async def login(login_data: LoginRequest):
             "is_admin": user.priv_admin == 'Y',
             "active": user.active,
             "id_aerolinea": user.id_aerolinea,
-            "picture": user.picture
+            # ✅ NO INCLUIR PICTURE - COMENTADO
+            # "picture": user.picture
         }
         
         total_elapsed = (time.time() - start_time) * 1000
