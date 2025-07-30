@@ -82,7 +82,8 @@ async def get_all_tripulantes(
             metadata=metadata_final
         )
         
-        logger.info(f"📤 Response.metadata enviado: {response.metadata}")
+        metadata_log = getattr(response, 'metadata', 'No metadata field')
+        logger.info(f"📤 Response.metadata enviado: {metadata_log}")
         return response
         
     except Exception as e:
