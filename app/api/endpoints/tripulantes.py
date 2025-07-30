@@ -24,21 +24,25 @@ async def get_all_tripulantes(
     try:
         # Obtener el total de tripulantes
         total_tripulantes = get_total_tripulantes()
+        logger.info(f"🔢 Total tripulantes obtenido: {total_tripulantes}")
         
         # Obtener tripulantes paginados
         tripulantes = get_todos_tripulantes(offset=offset, limit=limit)
+        logger.info(f"📝 Tripulantes obtenidos: {len(tripulantes)}")
         
         if not tripulantes:
+            metadata_empty = {
+                "total": total_tripulantes,
+                "offset": offset,
+                "limit": limit,
+                "has_more": False
+            }
+            logger.info(f"📊 Metadata (vacío): {metadata_empty}")
             return StandardResponse(
                 success=True,
                 message="No se encontraron tripulantes",
                 data=[],
-                metadata={
-                    "total": total_tripulantes,
-                    "offset": offset,
-                    "limit": limit,
-                    "has_more": False
-                }
+                metadata=metadata_empty
             )
         
         tripulantes_formateados = []
@@ -61,21 +65,30 @@ async def get_all_tripulantes(
         # Calcular si hay más páginas
         has_more = (offset + limit) < total_tripulantes
         
-        return StandardResponse(
+        metadata_final = {
+            "total": total_tripulantes,
+            "offset": offset,
+            "limit": limit,
+            "has_more": has_more,
+            "current_page_count": len(tripulantes_formateados)
+        }
+        
+        logger.info(f"📊 Metadata final: {metadata_final}")
+        
+        response = StandardResponse(
             success=True,
             message=f"Se encontraron {len(tripulantes_formateados)} tripulantes",
             data=tripulantes_formateados,
-            metadata={
-                "total": total_tripulantes,
-                "offset": offset,
-                "limit": limit,
-                "has_more": has_more,
-                "current_page_count": len(tripulantes_formateados)
-            }
+            metadata=metadata_final
         )
         
+        logger.info(f"📤 Response.metadata enviado: {response.metadata}")
+        return response
+        
     except Exception as e:
-        logger.error(f"Error al obtener tripulantes: {str(e)}")
+        logger.error(f"❌ Error al obtener tripulantes: {str(e)}")
+        import traceback
+        logger.error(f"❌ Traceback: {traceback.format_exc()}")
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Error interno del servidor al obtener tripulantes"
